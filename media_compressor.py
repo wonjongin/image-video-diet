@@ -1,4 +1,6 @@
 import os
+import sys
+import platform
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 from PIL import Image
@@ -17,6 +19,25 @@ except ImportError:
 class MediaCompressor:
     # 압축된 파일에 붙일 prefix (원본 파일명 앞에 붙음)
     OUTPUT_PREFIX = "압축_"
+
+    def get_ffmpeg_path(self):
+        """ffmpeg 경로를 찾아서 반환 (Windows는 번들, macOS는 시스템)"""
+        if platform.system() == 'Windows':
+            # PyInstaller로 번들링된 경우
+            if getattr(sys, 'frozen', False):
+                # 실행 파일의 디렉토리
+                base_path = Path(sys._MEIPASS)
+            else:
+                # 개발 중일 때
+                base_path = Path(__file__).parent
+
+            ffmpeg_path = base_path / 'bin' / 'ffmpeg.exe'
+            if ffmpeg_path.exists():
+                return str(ffmpeg_path)
+            return None
+        else:
+            # macOS/Linux는 시스템 ffmpeg 사용
+            return 'ffmpeg'
 
     def __init__(self, root):
         self.root = root
@@ -38,17 +59,17 @@ class MediaCompressor:
 
         # 이미지 목표 크기
         tk.Label(option_frame, text="이미지 목표 크기 (KB):").grid(row=0, column=0, padx=10, sticky=tk.W)
-        self.target_size = tk.IntVar(value=300)
+        self.target_size = tk.IntVar(value=200)
         tk.Entry(option_frame, textvariable=self.target_size, width=10).grid(row=0, column=1, sticky=tk.W)
 
         # 이미지 최대 해상도
         tk.Label(option_frame, text="이미지 최대 해상도 (px):").grid(row=1, column=0, padx=10, sticky=tk.W)
-        self.max_resolution = tk.IntVar(value=2000)
+        self.max_resolution = tk.IntVar(value=1024)
         tk.Entry(option_frame, textvariable=self.max_resolution, width=10).grid(row=1, column=1, sticky=tk.W)
 
         # 동영상 최대 해상도
         tk.Label(option_frame, text="동영상 최대 높이 (px):").grid(row=2, column=0, padx=10, sticky=tk.W)
-        self.max_video_height = tk.IntVar(value=1080)
+        self.max_video_height = tk.IntVar(value=480)
         tk.Entry(option_frame, textvariable=self.max_video_height, width=10).grid(row=2, column=1, sticky=tk.W)
 
         # 하위 폴더 포함 옵션
@@ -156,17 +177,17 @@ class MediaCompressor:
             output_filename = self.OUTPUT_PREFIX + original_path.name
             output_path = str(original_path.parent / output_filename)
 
-            # ffmpeg가 설치되어 있는지 확인
-            result = subprocess.run(['which', 'ffmpeg'], capture_output=True, text=True)
-            if result.returncode != 0:
-                return f"✗ ffmpeg가 설치되지 않았습니다. 'brew install ffmpeg'로 설치하세요."
+            # ffmpeg 경로 확인
+            ffmpeg_path = self.get_ffmpeg_path()
+            if not ffmpeg_path:
+                return f"✗ ffmpeg를 찾을 수 없습니다. bin/ffmpeg.exe 파일이 있는지 확인하세요."
 
             original_size = os.path.getsize(video_path) / (1024 * 1024)
 
             # ffmpeg로 동영상 압축 (해상도 제한 포함)
             # -vf scale=-2:높이 : 비율 유지하며 높이 제한, -2는 짝수로 맞춤
             cmd = [
-                'ffmpeg', '-i', video_path,
+                ffmpeg_path, '-i', video_path,
                 '-vf', f'scale=-2:min({max_height}\\,ih)',  # 높이가 max_height보다 크면 축소
                 '-vcodec', 'libx264',
                 '-crf', '28',
